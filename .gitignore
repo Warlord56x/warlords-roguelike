@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Save folder or files
+saves
+*.sav
+
 # C extensions
 *.so
 
