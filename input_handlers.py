@@ -119,6 +119,8 @@ class EventHandler(BaseEventHandler):
             if not self.engine.player.is_alive:
                 # The player was killed sometime during or after the action.
                 return GameOverEventHandler(self.engine)
+            elif self.engine.player.level.requires_level_up:
+                return LevelUpEventHandler(self.engine)
             # Return to the main handler.
             return MainGameEventHandler(self.engine)
         return self
@@ -180,6 +182,122 @@ class AskUserEventHandler(EventHandler):
         return MainGameEventHandler(self.engine)
 
 
+class CharacterScreenEventHandler(AskUserEventHandler):
+    TITLE = "Character Information"
+
+    def on_render(self, console: tcod.Console) -> None:
+        super().on_render(console)
+
+        if self.engine.player.x <= 30:
+            x = 40
+        else:
+            x = 0
+
+        y = 0
+
+        width = len(self.TITLE) + 4
+
+        console.draw_frame(
+            x=x,
+            y=y,
+            width=width,
+            height=7,
+            title=self.TITLE,
+            clear=True,
+            fg=(255, 255, 255),
+            bg=(0, 0, 0),
+        )
+
+        console.print(
+            x=x + 1, y=y + 1, string=f"Level: {self.engine.player.level.current_level}"
+        )
+        console.print(
+            x=x + 1, y=y + 2, string=f"XP: {self.engine.player.level.current_xp}"
+        )
+        console.print(
+            x=x + 1,
+            y=y + 3,
+            string=f"XP for next Level: {self.engine.player.level.experience_to_next_level}",
+        )
+
+        console.print(
+            x=x + 1, y=y + 4, string=f"Attack: {self.engine.player.fighter.power}"
+        )
+        console.print(
+            x=x + 1, y=y + 5, string=f"Defense: {self.engine.player.fighter.defense}"
+        )
+
+
+class LevelUpEventHandler(AskUserEventHandler):
+    TITLE = "Level Up"
+
+    def on_render(self, console: tcod.Console) -> None:
+        super().on_render(console)
+
+        if self.engine.player.x <= 30:
+            x = 40
+        else:
+            x = 0
+
+        console.draw_frame(
+            x=x,
+            y=0,
+            width=35,
+            height=8,
+            title=self.TITLE,
+            clear=True,
+            fg=(255, 255, 255),
+            bg=(0, 0, 0),
+        )
+
+        console.print(x=x + 1, y=1, string="Congratulations! You level up!")
+        console.print(x=x + 1, y=2, string="Select an attribute to increase.")
+
+        console.print(
+            x=x + 1,
+            y=4,
+            string=f"a) Constitution (+20 HP, from {self.engine.player.fighter.max_hp})",
+        )
+        console.print(
+            x=x + 1,
+            y=5,
+            string=f"b) Strength (+1 attack, from {self.engine.player.fighter.power})",
+        )
+        console.print(
+            x=x + 1,
+            y=6,
+            string=f"c) Agility (+1 defense, from {self.engine.player.fighter.defense})",
+        )
+
+    def ev_keydown(self, event: tcod.event.KeyDown) -> Optional[ActionOrHandler]:
+        player = self.engine.player
+        key = event.sym
+        index = key - tcod.event.K_a
+
+        if 0 <= index <= 2:
+            if index == 0:
+                player.level.increase_max_hp()
+            elif index == 1:
+                player.level.increase_power()
+            else:
+                player.level.increase_defense()
+        else:
+            self.engine.message_log.add_message(
+                "Invalid entry.", color.invalid)
+
+            return None
+
+        return super().ev_keydown(event)
+
+    def ev_mousebuttondown(
+        self, event: tcod.event.MouseButtonDown
+    ) -> Optional[ActionOrHandler]:
+        """
+        Don't allow the player to click to exit the menu, like normal.
+        """
+        return None
+
+
 class InventoryEventHandler(AskUserEventHandler):
     """This handler lets the user select an item.
 
@@ -224,7 +342,15 @@ class InventoryEventHandler(AskUserEventHandler):
         if number_of_items_in_inventory > 0:
             for i, item in enumerate(self.engine.player.inventory.items):
                 item_key = chr(ord("a") + i)
-                console.print(x + 1, y + i + 1, f"({item_key}) {item.name}")
+                is_equipped = self.engine.player.equipment.item_is_equipped(
+                    item)
+
+                item_string = f"({item_key}) {item.name}"
+
+                if is_equipped:
+                    item_string = f"{item_string} (E)"
+
+                console.print(x + 1, y + i + 1, item_string)
         else:
             console.print(x + 1, y + 1, "(Empty)")
 
@@ -254,8 +380,13 @@ class InventoryActivateHandler(InventoryEventHandler):
     TITLE = "Select an item to use"
 
     def on_item_selected(self, item: Item) -> Optional[ActionOrHandler]:
-        """Return the action for the selected item."""
-        return item.consumable.get_action(self.engine.player)
+        if item.consumable:
+            # Return the action for the selected item.
+            return item.consumable.get_action(self.engine.player)
+        elif item.equippable:
+            return actions.EquipAction(self.engine.player, item)
+        else:
+            return None
 
 
 class InventoryDropHandler(InventoryEventHandler):
@@ -384,8 +515,14 @@ class MainGameEventHandler(EventHandler):
         action: Optional[Action] = None
 
         key = event.sym
+        modifier = event.mod
 
         player = self.engine.player
+
+        if key == tcod.event.K_PERIOD and modifier & (
+            tcod.event.KMOD_LSHIFT | tcod.event.KMOD_RSHIFT
+        ):
+            return actions.TakeStairsAction(player)
 
         if key in MOVE_KEYS:
             dx, dy = MOVE_KEYS[key]
@@ -406,6 +543,8 @@ class MainGameEventHandler(EventHandler):
             return InventoryActivateHandler(self.engine)
         elif key == tcod.event.K_d:
             return InventoryDropHandler(self.engine)
+        elif key == tcod.event.K_c:
+            return CharacterScreenEventHandler(self.engine)
         elif key == tcod.event.K_SLASH:
             return LookHandler(self.engine)
 
@@ -416,8 +555,8 @@ class MainGameEventHandler(EventHandler):
 class GameOverEventHandler(EventHandler):
     def on_quit(self) -> None:
         """Handle exiting out of a finished game."""
-        if os.path.exists("savegame.sav"):
-            os.remove("savegame.sav")  # Deletes the active save file.
+        if os.path.exists("saves/savegame.sav"):
+            os.remove("saves/savegame.sav")  # Deletes the active save file.
         raise exceptions.QuitWithoutSaving()  # Avoid saving a finished game.
 
     def ev_quit(self, event: tcod.event.Quit) -> None:
