@@ -9,6 +9,7 @@ saves
 
 # Build
 *.zip
+*.json
 
 # C extensions
 *.so
