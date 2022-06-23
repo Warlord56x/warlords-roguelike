@@ -9,7 +9,6 @@ if TYPE_CHECKING:
 
 
 class BaseComponent:
-    entity: Entity  # Owning entity instance.
     parent: Entity  # Owning entity instance.
 
     @property

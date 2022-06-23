@@ -160,13 +160,11 @@ class MeleeAction(ActionWithDirection):
             attack_color = color.enemy_atk
 
         if damage > 0:
-            print(f"{attack_desc} for {damage} hit points.")
             self.engine.message_log.add_message(
                 f"{attack_desc} for {damage} hit points.", attack_color
             )
             target.fighter.hp -= damage
         else:
-            print(f"{attack_desc} but does no damage.")
             self.engine.message_log.add_message(
                 f"{attack_desc} but does no damage.", attack_color
             )
