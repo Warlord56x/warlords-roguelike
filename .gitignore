@@ -15,6 +15,7 @@ saves
 
 # Distribution / packaging
 .Python
+output
 build/
 develop-eggs/
 dist/
